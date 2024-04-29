@@ -1,0 +1,78 @@
+---
+title: "Module 6 Assignment"
+author: "Jaron Richman"
+date: "2024-04-18"
+output: html_document
+---
+
+```{r}
+#Import libraries
+library(dplyr)
+library(feather)
+library(caret)
+```
+
+```{r}
+#Read in and combine files
+season2023 <- read_feather("/Users/Jaron/Downloads/NCAA2023.feather")
+season2024 <- read_feather("/Users/Jaron/Downloads/NCAA2024.feather")
+
+season_2023_24 <- full_join(season2023, season)
+```
+
+```{r}
+#Data Cleaning
+data <- season_2023_24 %>%
+  filter(Date >= '2023-01-01',
+         PitchCall == "InPlay",
+         TaggedHitType != 'Bunt',
+         complete.cases(PlayResult, ExitSpeed, Angle)) %>%
+  mutate(HitCheck = ifelse(PlayResult %in% c("Out", "Sacrifice", "Error", "FieldersChoice"), 0, 1),
+         PlayResult = case_when(PlayResult == "OUt" ~ "Out",
+                                PlayResult == "SIngle" ~ "Single",
+                                PlayResult == "sacrifice" ~ "Sacrifice",
+                                PlayResult == "homerun" ~ "HomeRun",
+                                TRUE ~ PlayResult),
+         woba = case_when(PlayResult %in% c("Out", "Sacrifice", "FieldersChoice", "Error") ~ 0,
+                          PlayResult == "Single" ~ 0.883,
+                          PlayResult == "Double" ~ 1.244,
+                          PlayResult == "Triple" ~ 1.569,
+                          PlayResult == "HomeRun" ~ 2.004)) %>%
+  select(Batter, PlayResult, ExitSpeed, Angle, PlayResult, woba) %>%
+  filter(PlayResult != "Undefined")
+```
+
+```{r}
+index <- sample(1:nrow(data), 0.05 * nrow(data))
+train <- data[index,]
+test <- data[-index,]
+```
+
+```{r}
+fit.knn <- train(woba~ExitSpeed+Angle, data=train, method="knn")
+```
+
+```{r}
+print(fit.knn)
+```
+
+```{r}
+plot(fit.knn)
+```
+
+
+
+```{r}
+data$xWOBA <- predict(fit.knn, newdata = data)
+```
+
+```{r}
+data2 <- data %>%
+  group_by(Batter) %>%
+  summarise(woba = round(mean(woba), 3),
+            xWOBA = round(mean(xWOBA), 3),
+            Difference = xWOBA - woba,
+            BIP = n()) %>%
+  filter(BIP > 50)
+```
+
